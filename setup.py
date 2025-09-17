@@ -59,10 +59,11 @@ def main():
     
     print("\n📁 DIRECTORY STRUCTURE:")
     print("✅ Source code and configuration files are ready")
-    print("📝 Place your data files in:")
+    print("📝 Place your data files in (directories will be created automatically):")
     print("   - data/microns/extracted_swc/SWC_Skel/ (for SWC files)")
     print("   - data/microns/extracted_swc/syn/ (for synapse files)")
     print("   - data/iascone/extracted_swc/ (for IASCONE dataset)")
+    print("   - All directories are created automatically when you run the analysis!")
     
     print("\n🚀 NEXT STEPS:")
     print("1. Set up your conda environment (see instructions above)")
@@ -70,6 +71,8 @@ def main():
     print("3. Edit config/default.yaml to set your target neuron")
     print("4. Run: jupyter notebook")
     print("5. Open: main/thesis_script_main.ipynb")
+    print("\n💡 TIP: You can also run the directory setup utility:")
+    print("   python -c \"from src.setup_directories import setup_all_directories; setup_all_directories()\"")
     
     print("\n" + "=" * 60)
     print("Setup instructions complete! 🎉")

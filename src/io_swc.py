@@ -12,6 +12,10 @@ def build_swc_path(swc_dir: str | Path, prefix: str, neuron_id: str) -> Path:
     swc_dir = Path(swc_dir)
     if not swc_dir.is_absolute():
         swc_dir = _project_root() / swc_dir
+    
+    # Create directory if it doesn't exist
+    swc_dir.mkdir(parents=True, exist_ok=True)
+    
     p = swc_dir / f"{prefix}{neuron_id}.swc"
     if not p.exists():
         raise FileNotFoundError(f"SWC not found: {p}")

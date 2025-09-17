@@ -37,11 +37,13 @@ This project performs comprehensive dendritic clustering analysis including:
 ### Quick Start for New Users
 
 When you clone this repository, you'll get:
-- ✅ Source code and configuration files
-- ✅ Directory structure with `.gitkeep` files
-- ❌ **No data files** (you need to add your own)
-- ❌ **No conda environment** (you need to create your own)
-- ❌ **No generated figures** (they'll be created when you run analyses)
+- Source code and configuration files
+- Directory structure with `.gitkeep` files
+- **No data files** (you need to add your own)
+- **No conda environment** (you need to create your own)
+- **No generated figures** (they'll be created when you run analyses)
+
+**Good news**: All necessary directories are created automatically when you run the analysis!
 
 ### Setup Conda Environment
 
@@ -121,13 +123,14 @@ refactored/
 │   ├── datasets/             # Dataset loaders
 │   ├── processing/           # Data processing
 │   ├── visualization/        # Visualization modules
+│   ├── setup_directories.py  # Directory setup utility
 │   └── *.py                  # Core modules
 ├── .gitignore               # Git ignore rules
 ├── setup.py                 # Setup helper script
 └── requirements.txt          # Python dependencies
 ```
 
-**Note**: The `data/` and `figures/` directories are tracked by git but their contents are ignored. Place your data files in the appropriate subdirectories, and the code will automatically create the necessary output directories when running analyses.
+**Note**: The `data/` and `figures/` directories are tracked by git but their contents are ignored. The code automatically creates all necessary directories when running analyses, so you only need to place your data files in the appropriate locations.
 
 ## Input Data Requirements
 
@@ -160,7 +163,7 @@ Place synapse files in `data/{dataset}/extracted_swc/syn/` with the naming conve
 
 ### SWC File Structure
 
-SWC files must follow the standard SWC format with these columns:
+SWC files must follow the standard SWC format with these columns(AT LEAST THESE! can also be more):
 
 ```
 # PointNo Label X Y Z Radius Parent
@@ -253,7 +256,7 @@ output:
 
 5. **Configure the analysis:**
    - Edit `config/default.yaml` to set your target neuron and parameters
-   - Place your input files in the appropriate `data/{dataset}/extracted_swc/` directories
+   - Place your input files in the appropriate directories (they'll be created automatically if they don't exist)
 
 6. **Run the analysis:**
    - Execute cells sequentially from top to bottom
@@ -406,11 +409,29 @@ The project includes a comprehensive `.gitignore` file that ensures:
 
 The code automatically creates the necessary directory structure:
 
+- **Data directories**: Created automatically when loading data files
 - **Figures directories**: Created by `VisualizationConfig` class when running analyses
 - **Cache directories**: Created when computing geodesic and weight matrices
 - **Analysis directories**: Created when saving analysis results
 
-You only need to place your input data files in the appropriate `data/{dataset}/extracted_swc/` directories.
+**All directories are created automatically** - you only need to place your input data files in the appropriate locations.
+
+### Directory Setup Utility
+
+The project includes a utility function to set up all directories at once:
+
+```python
+from src.setup_directories import setup_all_directories
+
+# Set up all directories based on configuration
+data_dirs = setup_all_directories("config/default.yaml")
+```
+
+This function:
+- Creates all necessary data directories
+- Shows you exactly where to place your files
+- Provides clear feedback about the directory structure
+- Can be run standalone or imported into notebooks
 
 ## Contributing
 
