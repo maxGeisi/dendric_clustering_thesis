@@ -1,0 +1,24 @@
+dataset_id: "microns"                # "microns" or "iascone"
+
+paths:
+  base_data: "data"
+  swc_dir: "data/microns/extracted_swc/SWC_Skel"
+  syn_dir: "data/microns/extracted_swc/syn"
+  interim_results_dir: "data/microns/intirim_results" 
+
+input:
+  neuron_id: "n3"
+  swc_prefix: "microns_jan_"
+  syn_prefix: "microns_jan_syn"
+
+voxel_nm:
+  dx: 10
+  dy: 10
+  dz: 40
+
+analysis:
+  sigma_um: 1.0
+  distance_mapping: true # <- set to false if you want the i to e mapping based on density gradient field
+
+output:
+  figures_dir: "figures"
