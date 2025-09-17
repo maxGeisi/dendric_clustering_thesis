@@ -1,4 +1,4 @@
-# Dendric Clustering Analysis
+# Dendric Clustering Analysis and E-I Cotuning
 
 A comprehensive Python package for analyzing dendritic clustering of excitatory and inhibitory synapses in neuronal morphology data. This project provides tools for synapse mapping, clustering analysis, statistical comparisons, and advanced visualizations.
 
@@ -107,7 +107,6 @@ refactored/
 ├── config/
 │   └── default.yaml          # Configuration file
 ├── data/
-│   ├── cache/                # Cached computation results (auto-created)
 │   ├── microns/              # MICrONS dataset (place your data here)
 │   │   ├── extracted_swc/
 │   │   │   ├── SWC_Skel/     # SWC skeleton files
@@ -411,7 +410,7 @@ The code automatically creates the necessary directory structure:
 
 - **Data directories**: Created automatically when loading data files
 - **Figures directories**: Created by `VisualizationConfig` class when running analyses
-- **Cache directories**: Created when computing geodesic and weight matrices
+- **Intermediate results directories**: Created when computing geodesic and weight matrices
 - **Analysis directories**: Created when saving analysis results
 
 **All directories are created automatically** - you only need to place your input data files in the appropriate locations.
@@ -435,7 +434,7 @@ This function:
 
 ## Contributing
 
-This project is part of ongoing research in dendritic clustering analysis. For questions or contributions, please refer to the project documentation or contact the development team.
+This project is part of ongoing research in dendritic clustering analysis and E-I Cotuning. For questions or contributions, please refer to the project documentation or contact the development team.
 
 ## License
 
