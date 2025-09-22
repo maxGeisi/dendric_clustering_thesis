@@ -22,9 +22,13 @@ from .inhibitory_analysis import (
 )
 
 from .branch_processing import (
-    split_neuron_into_branches,
-    compute_branch_metrics,
-    get_branch_order_geodesic
+    split_branches,
+    build_branch_dataframe,
+    filter_branches_by_length,
+    add_volume_metrics,
+    get_branches_with_both_synapse_types,
+    get_branch_synapses,
+    print_branch_filtering_summary
 )
 
 __all__ = [
@@ -48,7 +52,11 @@ __all__ = [
     'compute_e_i_relationships',
     
     # branch_processing
-    'split_neuron_into_branches',
-    'compute_branch_metrics',
-    'get_branch_order_geodesic'
+    'split_branches',
+    'build_branch_dataframe',
+    'filter_branches_by_length',
+    'add_volume_metrics',
+    'get_branches_with_both_synapse_types',
+    'get_branch_synapses',
+    'print_branch_filtering_summary'
 ]

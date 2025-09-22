@@ -30,7 +30,8 @@ from .branch_plots import (
     plot_branch_synapses_by_cluster,
     plot_synapse_distance_to_soma_histogram,
     plot_branch_density_analysis,
-    plot_branch_inhibitory_clusters
+    plot_branch_inhibitory_clusters,
+    plot_branch_by_ecluster_enhanced
 )
 
 
@@ -475,6 +476,7 @@ def create_advanced_branch_visualizations(
     neuron_splits: list,
     syn_exec_df: pd.DataFrame,
     syn_inh_df: pd.DataFrame,
+    syn_inh_df_filtered: pd.DataFrame,
     cluster_df: pd.DataFrame,
     calculation_nodes: pd.DataFrame,
     geodesic_mat_full: pd.DataFrame,
@@ -543,13 +545,18 @@ def create_advanced_branch_visualizations(
             branch_idx, neuron_splits, syn_exec_df, calculation_nodes, geodesic_mat_full, config, save_plot=save_plots
         )
         results['branch_density_analysis'] = fig4
-        
+
+        fig5 = plot_branch_by_ecluster_enhanced(
+            branch_idx, neuron_splits, syn_exec_df, syn_inh_df_filtered, cluster_df, calculation_nodes, geodesic_mat_full, config, margin=3.0, save_plot=save_plots
+        )
+        results['branch_e_clusters_gradient'] = fig5
+
         # 5. Branch inhibitory clusters (if inhibitory data available)
         if cluster_df_inh is not None:
-            fig5 = plot_branch_inhibitory_clusters(
+            fig6 = plot_branch_inhibitory_clusters(
                 branch_idx, neuron_splits, syn_exec_df, syn_inh_df, cluster_df_inh, neuron_skel, config, save_plot=save_plots
             )
-            results['branch_inhibitory_clusters'] = fig5
+            results['branch_inhibitory_clusters'] = fig6
         
         print(f"\nCreated {len(results)} advanced branch visualizations successfully!")
         
@@ -559,4 +566,5 @@ def create_advanced_branch_visualizations(
         traceback.print_exc()
     
     return results
+
 

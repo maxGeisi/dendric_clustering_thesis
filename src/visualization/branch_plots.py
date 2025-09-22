@@ -927,3 +927,304 @@ def plot_branch_inhibitory_clusters(
         print(f"Branch inhibitory clusters plot saved to: {output_path}")
     
     return fig
+
+
+def plot_branch_by_ecluster_enhanced(
+    branch_idx: int,
+    neuron_splits: List[Any],
+    syn_exec_df: pd.DataFrame,
+    syn_inh_df_filtered: pd.DataFrame,
+    cluster_df: pd.DataFrame,
+    calculation_nodes: pd.DataFrame,
+    geodesic_mat_full: pd.DataFrame,
+    config: VisualizationConfig,
+    margin: float = 3.0,
+    save_plot: bool = True
+) -> go.Figure:
+    """
+    Plot enhanced branch visualization with E/I clusters and local synapse density.
+    
+    Args:
+        branch_idx: Index of the branch to visualize
+        neuron_splits: List of branch skeleton objects
+        syn_exec_df: DataFrame with excitatory synapse data
+        syn_inh_df_filtered: DataFrame with filtered inhibitory synapse data
+        cluster_df: DataFrame with cluster information
+        calculation_nodes: DataFrame with density calculation nodes
+        geodesic_mat_full: Full geodesic distance matrix
+        config: Visualization configuration
+        margin: Margin around branch for visualization bounds
+        save_plot: Whether to save the plot
+        
+    Returns:
+        Plotly figure
+    """
+    def get_branch_order_geodesic(sk, geodesic_mat_full):
+        """Get branch node order from root to tip using geodesic distances."""
+        root = sk.nodes.loc[sk.nodes['type']=='root', 'node_id'].iat[0]
+        node_order = [root]
+        current = root
+        while True:
+            children = sk.nodes[sk.nodes['parent_id']==current]['node_id'].tolist()
+            if not children:
+                break
+            node_order.extend(children)
+            current = children[0]  # Take first child (could be improved)
+        return node_order
+    
+    # 1) branch skeleton & ordering
+    sk_branch = neuron_splits[branch_idx]
+    order = get_branch_order_geodesic(sk_branch, geodesic_mat_full)
+    
+    # 2) bounding box
+    coords = sk_branch.nodes[['x','y','z']].to_numpy()
+    mins, maxs = coords.min(axis=0) - margin, coords.max(axis=0) + margin
+    x0, y0, z0 = mins
+    x1, y1, z1 = maxs
+
+    # 3) map every node_id → branch_idx
+    node_to_branch = {}
+    for b, sk in enumerate(neuron_splits):
+        for nid in sk.nodes['node_id']:
+            node_to_branch[nid] = b
+
+    # 4) pick E & I synapses on this branch
+    # Use the correct column names based on the notebook structure
+    exec_cluster_col = 'cluster_id' if 'cluster_id' in syn_exec_df.columns else 'cluster_id_exec'
+    inh_cluster_col = 'cluster_id_exec' 
+    
+    df_e = syn_exec_df[
+        syn_exec_df['closest_node_id'].map(node_to_branch).eq(branch_idx)
+    ]
+    df_i_all = syn_inh_df_filtered[
+        syn_inh_df_filtered['closest_node_id'].map(node_to_branch).eq(branch_idx)
+    ]
+    
+    # Debug: Print information about the data
+    print(f"Debug: E synapses on branch {branch_idx}: {len(df_e)}")
+    print(f"Debug: I synapses on branch {branch_idx}: {len(df_i_all)}")
+    if len(df_e) > 0:
+        print(f"Debug: E cluster column: {exec_cluster_col}, available clusters: {sorted(df_e[exec_cluster_col].unique())}")
+    if len(df_i_all) > 0:
+        print(f"Debug: I cluster column: {inh_cluster_col}, available clusters: {sorted(df_i_all[inh_cluster_col].unique())}")
+        print(f"Debug: I synapse columns: {list(df_i_all.columns)}")
+
+    # 5) which E-clusters appear here?
+    e_clusters = sorted(df_e[exec_cluster_col].unique())
+    
+    # 6) set up 1×2 scenes with enhanced layout
+    fig = make_subplots(
+        rows=1, cols=2,
+        specs=[[{"type":"scene"},{"type":"scene"}]],
+        subplot_titles=(
+            f"E & I synapses (branch {branch_idx})",
+            f"Local synapse density"
+        ),
+        horizontal_spacing=0.05
+    )
+    
+    palette = q.Dark24
+    colors = {cid: palette[i % len(palette)] for i, cid in enumerate(e_clusters)}
+
+    # 7) LEFT: Plot E and I clusters with enhanced styling
+    # First add the branch skeleton (thinner, more subtle)
+    navis.plot3d(sk_branch, fig=fig,
+                 color='black', linewidth=2,
+                 legend=False, inline=False)
+
+    # 8) LEFT: for each E-cluster, plot its E's and its mapped I's
+    for i, cid in enumerate(e_clusters):
+        cluster_color = colors[cid]
+        
+        # E-synapses (circles)
+        sub_e = df_e[df_e[exec_cluster_col] == cid]
+        if not sub_e.empty:
+            fig.add_trace(go.Scatter3d(
+                x=sub_e.Epos3DX, y=sub_e.Epos3DY, z=sub_e.Epos3DZ,
+                mode='markers',
+                marker=dict(
+                    size=6, 
+                    color=cluster_color, 
+                    symbol='circle',
+                    line=dict(width=1, color='white')
+                ),
+                name=f"E-cluster {cid}",
+                legendgroup=f"c{cid}",
+                showlegend=True
+            ), row=1, col=1)
+
+        # I-synapses mapped to that same E-cluster (crosses)
+        # These are the inhibitory synapses that target the same locations as the E-cluster
+        sub_i = df_i_all[df_i_all[inh_cluster_col] == cid]
+        print(f"Debug: For E-cluster {cid}, found {len(sub_i)} I-synapses")
+        if not sub_i.empty:
+            print(f"Debug: Adding I-synapses for cluster {cid} with {len(sub_i)} points")
+            fig.add_trace(go.Scatter3d(
+                x=sub_i.Ipos3DX, y=sub_i.Ipos3DY, z=sub_i.Ipos3DZ,
+                mode='markers',
+                marker=dict(
+                    size=4, 
+                    color=cluster_color, 
+                    symbol='x',
+                    line=dict(width=2)
+                ),
+                name=f"I→E{cid}",  # Corrected legend name
+                legendgroup=f"c{cid}",
+                showlegend=True
+            ), row=1, col=1)
+        else:
+            print(f"Debug: No I-synapses found for E-cluster {cid}")
+    
+    # Add all remaining I-synapses that don't belong to any E-cluster (if any)
+    all_mapped_i_clusters = set()
+    for cid in e_clusters:
+        sub_i = df_i_all[df_i_all[inh_cluster_col] == cid]
+        if not sub_i.empty:
+            all_mapped_i_clusters.update(sub_i.index)
+    
+    remaining_i = df_i_all[~df_i_all.index.isin(all_mapped_i_clusters)]
+    if not remaining_i.empty:
+        print(f"Debug: Adding {len(remaining_i)} remaining I-synapses not mapped to E-clusters")
+        fig.add_trace(go.Scatter3d(
+            x=remaining_i.Ipos3DX, y=remaining_i.Ipos3DY, z=remaining_i.Ipos3DZ,
+            mode='markers',
+            marker=dict(
+                size=4, 
+                color='gray', 
+                symbol='x',
+                line=dict(width=2)
+            ),
+            name="I-synapses (unmapped)",
+            legendgroup="unmapped",
+            showlegend=True
+        ), row=1, col=1)
+
+    # 9) RIGHT: Enhanced density visualization with cluster peaks
+    df_n = calculation_nodes.query(
+        "x>=@x0 and x<=@x1 and y>=@y0 and y<=@y1 and z>=@z0 and z<=@z1"
+    )
+    
+    # Enhanced density gradient
+    dmin, dmax = df_n.synapse_density.min(), df_n.synapse_density.max()
+    
+    # Main density heatmap
+    fig.add_trace(go.Scatter3d(
+        x=df_n.x, y=df_n.y, z=df_n.z,
+        mode='markers',
+        marker=dict(
+            size=4,
+            color=df_n.synapse_density,
+            colorscale=[[0,'black'],[0.6,'yellow'],[1,'red']],
+            cmin=dmin, 
+            cmax=dmax,
+            colorbar=dict(
+                title='Density', 
+                x=1.02, 
+                xanchor='left', 
+                y=0.5,
+                len=0.8
+            ),
+            opacity=0.8
+        ),
+        showlegend=False,
+        hovertemplate='Density: %{marker.color:.3f}<extra></extra>'
+    ), row=1, col=2)
+
+    # Add E-cluster peaks on density gradient from cluster_df
+    for cid in e_clusters:
+        cluster_color = colors[cid]
+        
+        # Get peak node info from cluster_df for this E-cluster
+        # Use the correct column names based on the notebook structure
+        cluster_id_col = 'e_cluster_id' if 'e_cluster_id' in cluster_df.columns else 'cluster_id'
+        cluster_peak_info = cluster_df[cluster_df[cluster_id_col] == cid]
+        
+        if not cluster_peak_info.empty:
+            # Get the peak node ID
+            peak_node_id = cluster_peak_info.iloc[0]['Cluster_Peak']
+            
+            # Get coordinates from calculation_nodes using the peak_node ID
+            peak_coords = calculation_nodes[calculation_nodes['node_id'] == peak_node_id]
+            
+            if not peak_coords.empty:
+                peak_node = peak_coords.iloc[0]
+                fig.add_trace(go.Scatter3d(
+                    x=[peak_node['x']], y=[peak_node['y']], z=[peak_node['z']],
+                    mode='markers',
+                    marker=dict(
+                        size=10,
+                        color=cluster_color,
+                        symbol='diamond',
+                        line=dict(width=2, color='white')
+                    ),
+                    showlegend=False,
+                    hovertemplate=f'E-cluster {cid} peak<extra></extra>'
+                ), row=1, col=2)
+
+    # 10) Enhanced layout and styling
+    # Set axis ranges for both scenes
+    for scene_name in ['scene', 'scene2']:
+        fig.layout[scene_name].xaxis.range = [x0, x1]
+        fig.layout[scene_name].yaxis.range = [y0, y1]
+        fig.layout[scene_name].zaxis.range = [z0, z1]
+        
+        # Enhanced scene styling
+        fig.layout[scene_name].update(
+            xaxis=dict(
+                showgrid=True, 
+                gridcolor='lightgray',
+                showbackground=True,
+                backgroundcolor='rgba(240,240,240,0.3)'
+            ),
+            yaxis=dict(
+                showgrid=True, 
+                gridcolor='lightgray',
+                showbackground=True,
+                backgroundcolor='rgba(240,240,240,0.3)'
+            ),
+            zaxis=dict(
+                showgrid=True, 
+                gridcolor='lightgray',
+                showbackground=True,
+                backgroundcolor='rgba(240,240,240,0.3)'
+            ),
+            camera=dict(
+                eye=dict(x=1.5, y=1.5, z=1.5)
+            )
+        )
+
+    # 11) Final layout with enhanced styling
+    fig.update_layout(
+        width=1200, 
+        height=700,
+        title=dict(
+            text=f"E and I Clusters – Shown on Gradient - {config.neuron_id}",
+            font=dict(size=18, color='black'),
+            x=0.5
+        ),
+        showlegend=True,
+        legend=dict(
+            x=-0.3,  # Move legend even further left
+            y=0.9,   # Slightly lower
+            bgcolor='rgba(255,255,255,0.95)',
+            bordercolor='gray',
+            borderwidth=1,
+            font=dict(size=8),  # Small font
+            itemsizing='constant',
+            itemwidth=30,  # Minimum allowed value
+            tracegroupgap=1,
+            itemclick="toggleothers",
+            itemdoubleclick="toggle"
+        ),
+        font=dict(color='black'),
+        paper_bgcolor='white',
+        plot_bgcolor='white'
+    )
+
+    # Save plot if requested
+    if save_plot:
+        output_path = config.base_output_dir / "branches" / f"{config.neuron_id}_branch_{branch_idx}_density_gradient_ecluster.{config.format}"
+        fig.write_image(str(output_path), width=1200, height=700, scale=2)
+        print(f"Enhanced branch E-cluster visualization saved to: {output_path}")
+    
+    return fig
