@@ -16,9 +16,32 @@ from .cluster_processing import (
 )
 
 from .inhibitory_analysis import (
-    map_inhibitory_to_excitatory_clusters,
+    get_local_maximum_inh_e_gradient,
+    create_inhibitory_clusters_by_e_gradient,
+    map_inhibitory_to_excitatory_clusters_by_e_gradient,
+    split_mixed_inhibitory_clusters_by_e_gradient,
+    find_closest_excitatory_synapses_for_e_gradient,
     split_mixed_inhibitory_clusters,
-    compute_e_i_relationships
+    compute_e_i_relationships,
+    compute_e_i_distance_analysis,
+    print_inhibitory_cluster_statistics
+)
+
+from .distance_analysis import (
+    find_closest_excitatory_synapses,
+    map_inhibitory_to_excitatory_clusters_by_distance,
+    split_mixed_inhibitory_clusters_by_distance,
+    compute_distances_within_clusters,
+    analyze_e_i_relationships,
+    compute_distance_statistics,
+    define_cutoff_strategies,
+    apply_distance_cutoff,
+    print_distance_analysis_summary
+)
+
+from .i_to_e_analysis import (
+    run_complete_i_to_e_analysis,
+    print_data_naming_conventions
 )
 
 from .branch_processing import (
@@ -47,9 +70,30 @@ __all__ = [
     'print_cluster_statistics',
     
     # inhibitory_analysis
-    'map_inhibitory_to_excitatory_clusters',
+    'get_local_maximum_inh_e_gradient',
+    'create_inhibitory_clusters_by_e_gradient',
+    'map_inhibitory_to_excitatory_clusters_by_e_gradient',
+    'split_mixed_inhibitory_clusters_by_e_gradient',
+    'find_closest_excitatory_synapses_for_e_gradient',
     'split_mixed_inhibitory_clusters',
     'compute_e_i_relationships',
+    'compute_e_i_distance_analysis',
+    'print_inhibitory_cluster_statistics',
+    
+    # distance_analysis
+    'find_closest_excitatory_synapses',
+    'map_inhibitory_to_excitatory_clusters_by_distance',
+    'split_mixed_inhibitory_clusters_by_distance',
+    'compute_distances_within_clusters',
+    'analyze_e_i_relationships',
+    'compute_distance_statistics',
+    'define_cutoff_strategies',
+    'apply_distance_cutoff',
+    'print_distance_analysis_summary',
+    
+    # i_to_e_analysis
+    'run_complete_i_to_e_analysis',
+    'print_data_naming_conventions',
     
     # branch_processing
     'split_branches',

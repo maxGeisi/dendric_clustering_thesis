@@ -17,6 +17,14 @@ from .distance_analysis import (
     compute_distance_statistics,
     apply_distance_cutoff
 )
+
+import importlib
+from .inhibitory_analysis import (
+    create_inhibitory_clusters_by_e_gradient,
+    map_inhibitory_to_excitatory_clusters_by_e_gradient,
+    split_mixed_inhibitory_clusters_by_e_gradient,
+    find_closest_excitatory_synapses_for_e_gradient
+)
 from .analysis_io import create_analysis_directories
 from .cluster_processing import build_cluster_dataframe, compute_cluster_metrics
 
@@ -92,7 +100,12 @@ def run_complete_i_to_e_analysis(
     neuron_skel,
     output_base_dir: Path,
     neuron_id: str,
-    overall_density: float
+    overall_density: float,
+    distance_mapping: bool = True,
+    calculation_nodes: pd.DataFrame = None,
+    node_counts_inh: pd.Series = None,
+    clusters_dict: Dict[int, list] = None,
+    peak_to_cluster_id: Dict[int, int] = None
 ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any], Dict[str, Any]]:
     """
     Run complete inhibitory to excitatory synapse analysis pipeline.
@@ -109,6 +122,11 @@ def run_complete_i_to_e_analysis(
         output_base_dir: Base directory for output files
         neuron_id: Neuron identifier
         overall_density: Overall synapse density (synapses/μm)
+        distance_mapping: If True, use distance-based mapping; if False, use E-density gradient mapping
+        calculation_nodes: DataFrame with node density information (required for gradient mapping)
+        node_counts_inh: Series with inhibitory synapse counts per node (required for gradient mapping)
+        clusters_dict: Dictionary with excitatory cluster information (required for gradient mapping)
+        peak_to_cluster_id: Mapping from peaks to cluster IDs (required for gradient mapping)
         
     Returns:
         Tuple of (filtered_synapses, filtered_clusters, distance_stats, relationship_stats)
@@ -119,50 +137,81 @@ def run_complete_i_to_e_analysis(
     analysis_dirs = create_analysis_directories(output_base_dir)
     
     # =============================================================================
-    # STEP 2: Find closest excitatory synapses
-    # =============================================================================
-    syn_inh_df = find_closest_excitatory_synapses(syn_inh_df, syn_exec_df, geodesic_mat_full)
-    
-    # =============================================================================
-    # STEP 3: Map inhibitory synapses to excitatory clusters
-    # =============================================================================
-    syn_inh_df = map_inhibitory_to_excitatory_clusters_by_distance(syn_inh_df, syn_exec_df, cluster_df)
-    valid_mappings = (syn_inh_df['cluster_id_exec'] != -1).sum()
-    
-    # =============================================================================
-    # STEP 4: Split mixed inhibitory clusters
+    # STEP 2: Choose mapping method based on distance_mapping flag
     # =============================================================================
     valid_exec_ids = set(cluster_df["cluster_id"])
-    syn_inh_df = split_mixed_inhibitory_clusters_by_distance(syn_inh_df, valid_exec_ids)
+    
+    if distance_mapping:
+        print("Using DISTANCE-BASED mapping for I to E cluster assignment")
+        # =============================================================================
+        # DISTANCE-BASED MAPPING
+        # =============================================================================
+        
+        # Find closest excitatory synapses
+        syn_inh_df = find_closest_excitatory_synapses(syn_inh_df, syn_exec_df, geodesic_mat_full)
+        
+        # Map inhibitory synapses to excitatory clusters
+        syn_inh_df = map_inhibitory_to_excitatory_clusters_by_distance(syn_inh_df, syn_exec_df, cluster_df)
+        valid_mappings = (syn_inh_df['cluster_id_exec'] != -1).sum()
+        
+        # Split mixed inhibitory clusters
+        syn_inh_df = split_mixed_inhibitory_clusters_by_distance(syn_inh_df, valid_exec_ids)
+        
+        # Compute distances within clusters
+        syn_inh_df = compute_distances_within_clusters(syn_inh_df, syn_exec_df, geodesic_mat_full)
+        
+    else:
+        print("Using E-DENSITY GRADIENT mapping for I to E cluster assignment")
+        # =============================================================================
+        # E-DENSITY GRADIENT MAPPING
+        # =============================================================================
+        
+        # Validate required parameters for gradient mapping
+        if any(x is None for x in [calculation_nodes, node_counts_inh, clusters_dict, peak_to_cluster_id]):
+            raise ValueError("For E-density gradient mapping, calculation_nodes, node_counts_inh, clusters_dict, and peak_to_cluster_id must be provided")
+        
+        # Create inhibitory clusters using E-density gradient
+        clusters_dict_inh_e_gradient, peaks_inh_e_gradient = create_inhibitory_clusters_by_e_gradient(
+            neuron_skel, calculation_nodes, node_counts_inh, clusters_dict, peak_to_cluster_id
+        )
+        
+        # Map inhibitory synapses to excitatory clusters using E-gradient
+        syn_inh_df = map_inhibitory_to_excitatory_clusters_by_e_gradient(
+            syn_inh_df, syn_exec_df, clusters_dict_inh_e_gradient, clusters_dict, peak_to_cluster_id, valid_exec_ids
+        )
+        
+        # Split mixed inhibitory clusters
+        syn_inh_df = split_mixed_inhibitory_clusters_by_e_gradient(syn_inh_df, valid_exec_ids)
+        
+        # Find closest excitatory synapses (for distance analysis)
+        syn_inh_df = find_closest_excitatory_synapses_for_e_gradient(syn_inh_df, syn_exec_df, geodesic_mat_full)
+        
+        # Compute distances within clusters
+        syn_inh_df = compute_distances_within_clusters(syn_inh_df, syn_exec_df, geodesic_mat_full)
     
     # =============================================================================
-    # STEP 5: Compute distances within clusters
-    # =============================================================================
-    syn_inh_df = compute_distances_within_clusters(syn_inh_df, syn_exec_df, geodesic_mat_full)
-    
-    # =============================================================================
-    # STEP 6: Create filtered datasets (VALID inhibitory synapses)
+    # STEP 3: Create filtered datasets (VALID inhibitory synapses)
     # =============================================================================
     syn_inh_cluster_df = syn_inh_df.dropna(subset=["min_dist_e_syn_in_clu"]).copy()
     
     # =============================================================================
-    # STEP 7: Analyze E/I relationships
+    # STEP 4: Analyze E/I relationships
     # =============================================================================
     relationship_stats = analyze_e_i_relationships(syn_inh_cluster_df)
     
     # =============================================================================
-    # STEP 8: Compute distance statistics
+    # STEP 5: Compute distance statistics
     # =============================================================================
     distance_stats = compute_distance_statistics(syn_inh_cluster_df)
     
     # =============================================================================
-    # STEP 9: Apply DYNAMIC cutoff (matches original dc_initial_algo.py)
+    # STEP 6: Apply DYNAMIC cutoff (matches original dc_initial_algo.py)
     # =============================================================================
     dynamic_cutoff = 1.0 / overall_density
     syn_inh_cluster_df_filtered = apply_distance_cutoff(syn_inh_cluster_df, dynamic_cutoff)
     
     # =============================================================================
-    # STEP 10: Rebuild cluster DataFrames with filtered data
+    # STEP 7: Rebuild cluster DataFrames with filtered data
     # =============================================================================
     # Only include clusters that have synapses in the filtered dataset
     filtered_cluster_ids = set(syn_inh_cluster_df_filtered['cluster_id_inh'].unique())
@@ -186,7 +235,7 @@ def run_complete_i_to_e_analysis(
     )
     
     # =============================================================================
-    # STEP 11: Print data naming conventions and contents
+    # STEP 8: Print data naming conventions and contents
     # =============================================================================
     print_data_naming_conventions(
         syn_inh_df, syn_inh_cluster_df, syn_inh_cluster_df_filtered, 

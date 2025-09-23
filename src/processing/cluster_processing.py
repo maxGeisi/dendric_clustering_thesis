@@ -376,7 +376,7 @@ def compute_intra_cluster_distances(
     Returns:
         DataFrame with added intra-cluster distance metrics
     """
-    syn_exec_df = syn_exec_df.rename(columns={'cluster_id':'e_cluster_id'})
+    syn_exec_df = syn_exec_df.rename(columns={'cluster_id_exec':'e_cluster_id'})
     intra_stats = []
     for cid, grp in syn_exec_df.groupby('e_cluster_id'):
         node_ids = grp['closest_node_id'].unique()
@@ -420,7 +420,7 @@ def compute_inter_cluster_distances(
     Returns:
         DataFrame with added inter-cluster distance metrics
     """
-    syn_exec_df = syn_exec_df.rename(columns={'cluster_id':'e_cluster_id'})
+    syn_exec_df = syn_exec_df.rename(columns={'cluster_id_exec':'e_cluster_id'})
     inter_stats = []
     for cid, grp in syn_exec_df.groupby('e_cluster_id'):
         node_ids = grp['closest_node_id'].unique()

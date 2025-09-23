@@ -78,7 +78,7 @@ def map_inhibitory_to_excitatory_clusters_by_distance(
     valid_exec_ids = set(cluster_df["cluster_id"])
     
     # Create mapping from excitatory synapse ID to cluster ID
-    exec_cluster_map = syn_exec_df.set_index("id")["cluster_id"].to_dict()
+    exec_cluster_map = syn_exec_df.set_index("id")["cluster_id_exec"].to_dict()
     
     # Map every I-synapse to the E-cluster of its closest E-synapse
     syn_inh_df["cluster_id_exec"] = (
@@ -171,7 +171,7 @@ def compute_distances_within_clusters(
     # Build lookup: for each E-cluster, list its (syn_id, node, offset)
     exec_syn_2_clu_dict = defaultdict(list)
     for row in syn_exec_df.itertuples(index=False):
-        cid = row.cluster_id
+        cid = row.cluster_id_exec
         exec_syn_2_clu_dict[cid].append((row.id,  # Using 'id' instead of 'Exec_syn_id'
                                         row.closest_node_id,
                                         0.0))  # No offset in our current data

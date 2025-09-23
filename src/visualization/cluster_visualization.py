@@ -90,7 +90,7 @@ def plot_clusters_by_synapse_count(
     count_map = dict(zip(cluster_df['e_cluster_id'], cluster_df['e_synapse_count']))
     
     # Plot each cluster
-    for cid, group in syn_exec_df.groupby("cluster_id"):
+    for cid, group in syn_exec_df.groupby("cluster_id_exec"):
         # Look up synapse count (default to 0 if not found)
         cluster_count = count_map.get(cid, 0)
         color = get_cluster_color(cluster_count)
@@ -214,7 +214,7 @@ def plot_clusters_by_density(
     density_map = dict(zip(cluster_df['e_cluster_id'], cluster_df['cluster_density']))
     
     # Plot each cluster
-    for cid, group in syn_exec_df.groupby("cluster_id"):
+    for cid, group in syn_exec_df.groupby("cluster_id_exec"):
         # Look up density (default to 0 if not found)
         cluster_density = density_map.get(cid, 0)
         color = get_cluster_color(cluster_density)

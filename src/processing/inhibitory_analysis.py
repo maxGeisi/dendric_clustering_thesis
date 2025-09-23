@@ -6,11 +6,147 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Any
+from collections import defaultdict
+from tqdm import tqdm
 
-def map_inhibitory_to_excitatory_clusters(
+def get_local_maximum_inh_e_gradient(neuron, density_nodes, synapse_nodes):
+    """
+    For each node in 'synapse_nodes', climb to the local maximum of synapse density
+    by moving to any neighbor with strictly higher density (if such a neighbor exists).
+    Returns a dict: { start_node -> peak_node }.
+    
+    Args:
+        neuron: an object with neuron.graph (networkx or similar) 
+        density_nodes: a DataFrame with columns ['node_id', 'synapse_density']
+        synapse_nodes: iterable of node IDs for which we want the local maxima
+        
+    Returns:
+        Dictionary mapping start_node -> peak_node
+    """
+    # Build graph 
+    G = neuron.graph.to_undirected()
+    
+    # Make a fast-lookup dict for node densities
+    node2density = dict(zip(density_nodes.node_id, density_nodes.synapse_density))
+    # Cache --> don't re-walk the same nodes every time 
+    peak_cache = {}
+    
+    def climb_to_peak(start):
+        """Return the local maximum node reached by starting at 'start' and climbing up."""
+        # If already computed the peak for this node, just return it
+        if start in peak_cache:
+            return peak_cache[start]
+        
+        current = start
+        # Main idea: we want to iteratively find the peak through visiting the neighbours with the HIGHEST density 
+        while True:
+            curr_dens = node2density[current]
+            neighbors = list(G.neighbors(current))
+            
+            if not neighbors:
+                # No neighbors --> must be a peak
+                peak_cache[current] = current
+                return current
+            
+            # Compare each neighbor's density to current node's density
+            #  store differences in an array:
+            nbr_dens = np.zeros(len(neighbors))
+            for i,nbr in enumerate(neighbors):
+                nbr_dens[i]=node2density[nbr]
+            diff = nbr_dens - curr_dens
+            
+            # If all differences <= 0, no neighbor is strictly higher => local max
+            if np.all(diff <= 0):
+                peak_cache[current] = current
+                return current
+            else:
+                # Find the neighbor with the largest *positive* difference
+                best_idx = diff.argmax()  # index in 'neighbors'
+                best_neighbor = neighbors[best_idx]
+                # If that best_neighbor has a known peak, skip some steps for better computation:
+                if best_neighbor in peak_cache:
+                    peak_cache[current] = peak_cache[best_neighbor]
+                    return peak_cache[best_neighbor]
+                else:
+                    # Climb up to that neighbor and continue
+                    current = best_neighbor
+                    
+    
+    # Dictionary to store each start_node's final peak
+    node_to_peak = {}
+    
+    # Iterate over each node in synapse_nodes with a progress bar
+    for node in tqdm(synapse_nodes, desc="Nodes processed"):
+        node_to_peak[node] = climb_to_peak(node)
+    
+    return node_to_peak
+
+def create_inhibitory_clusters_by_e_gradient(
+    neuron_skel,
+    calculation_nodes: pd.DataFrame,
+    node_counts_inh: pd.Series,
+    clusters_dict: Dict[int, List[int]],
+    peak_to_cluster_id: Dict[int, int]
+) -> Tuple[Dict[int, List[int]], Dict[int, int]]:
+    """
+    Create inhibitory clusters using E-density gradient approach.
+    
+    Args:
+        neuron_skel: Neuron skeleton object
+        calculation_nodes: DataFrame with node density information
+        node_counts_inh: Series with inhibitory synapse counts per node
+        clusters_dict: Dictionary with excitatory cluster information
+        peak_to_cluster_id: Mapping from peaks to cluster IDs
+        
+    Returns:
+        Tuple of (clusters_dict_inh_e_gradient, peaks_inh_e_gradient)
+    """
+    # Create calculation nodes for inhibitory synapses
+    calculation_nodes_inh_e_gradient = calculation_nodes.copy()
+    calculation_nodes_inh_e_gradient["synapse_count"] = 0
+    
+    calculation_nodes_inh_e_gradient["synapse_count"] = (
+        calculation_nodes_inh_e_gradient["node_id"].map(node_counts_inh)
+        .fillna(0)
+        .astype(int)
+    )
+    
+    # Extract only those node IDs with synapses (i.e., count > 0)
+    synapse_node_list = calculation_nodes_inh_e_gradient[calculation_nodes_inh_e_gradient['synapse_count'] > 0]['node_id']
+    print(f"Processing {len(synapse_node_list)} nodes with inhibitory synapses")
+    
+    # Run the gradient ascent
+    peaks_inh_e_gradient = get_local_maximum_inh_e_gradient(
+        neuron_skel, calculation_nodes_inh_e_gradient, synapse_node_list
+    )
+    # Convert to int keys
+    peaks_inh_e_gradient = {int(k): int(v) for k, v in peaks_inh_e_gradient.items()}
+    
+    # Group them into clusters:
+    clusters_dict_inh_e_gradient = defaultdict(list)
+    for node, peak in peaks_inh_e_gradient.items():
+        clusters_dict_inh_e_gradient[peak].append(node)
+    
+    # Find largest peak
+    largest_peak_inh_e_gradient = None
+    largest_count_inh_e_gradient = 0
+    
+    for peak, nodes in clusters_dict_inh_e_gradient.items():
+        if len(nodes) > largest_count_inh_e_gradient:
+            largest_count_inh_e_gradient = len(nodes)
+            largest_peak_inh_e_gradient = peak
+    
+    print(f"Peak node with most associated nodes: {largest_peak_inh_e_gradient}")
+    print(f"Number of nodes in its cluster: {largest_count_inh_e_gradient}")
+    print(f"Number of Peaks(Clusters): {len(clusters_dict_inh_e_gradient.keys())}")
+    
+    return clusters_dict_inh_e_gradient, peaks_inh_e_gradient
+
+def map_inhibitory_to_excitatory_clusters_by_e_gradient(
     syn_inh_df: pd.DataFrame,
     syn_exec_df: pd.DataFrame,
     clusters_dict_inh_e_gradient: Dict[int, List[int]],
+    clusters_dict: Dict[int, List[int]],
     peak_to_cluster_id: Dict[int, int],
     valid_exec_ids: set
 ) -> pd.DataFrame:
@@ -21,6 +157,7 @@ def map_inhibitory_to_excitatory_clusters(
         syn_inh_df: DataFrame with inhibitory synapse data
         syn_exec_df: DataFrame with excitatory synapse data
         clusters_dict_inh_e_gradient: Clustering results for inhibitory synapses
+        clusters_dict: Dictionary with excitatory cluster information
         peak_to_cluster_id: Mapping from peaks to cluster IDs
         valid_exec_ids: Set of valid excitatory cluster IDs
         
@@ -29,18 +166,74 @@ def map_inhibitory_to_excitatory_clusters(
     """
     syn_inh_df = syn_inh_df.copy()
     
+    # Rename original cluster columns to avoid confusion
+    syn_inh_df.rename(columns={'cluster_id':'cluster_id_inh'}, inplace=True)
+    syn_exec_df.rename(columns={'cluster_id':'cluster_id_exec'}, inplace=True)
+    
     def assign_e_cid_to_i_syn(node):
         """Assign excitatory cluster ID to inhibitory synapse based on node."""
         for peak, nodes in clusters_dict_inh_e_gradient.items():
             if node in nodes:
-                if peak in peak_to_cluster_id:
+                if peak not in clusters_dict:
+                    return -1
+                else:
                     wanted_cid = peak_to_cluster_id[peak]
                     if wanted_cid in valid_exec_ids:
                         return wanted_cid
         return -1
     
     # Map inhibitory synapses to excitatory clusters
-    syn_inh_df["cluster_id_exec"] = syn_inh_df["closest_node_id"].apply(assign_e_cid_to_i_syn)
+    syn_inh_df['cluster_id_exec'] = syn_inh_df['closest_node_id'].apply(assign_e_cid_to_i_syn)
+    
+    return syn_inh_df
+
+def split_mixed_inhibitory_clusters_by_e_gradient(
+    syn_inh_df: pd.DataFrame,
+    valid_exec_ids: set
+) -> pd.DataFrame:
+    """
+    Split inhibitory clusters that map to multiple excitatory clusters using E-gradient approach.
+    
+    Args:
+        syn_inh_df: DataFrame with inhibitory synapse data
+        valid_exec_ids: Set of valid excitatory cluster IDs
+        
+    Returns:
+        DataFrame with split inhibitory clusters
+    """
+    syn_inh_df = syn_inh_df.copy()
+    
+    # Find inhibitory clusters that map to multiple excitatory clusters
+    mixed_inh = (
+        syn_inh_df
+        .groupby('cluster_id_inh')['cluster_id_exec']
+        .nunique()
+        .loc[lambda s: s > 1]
+        .index
+        .tolist()
+    )
+    print(f"{len(mixed_inh)} inhibitory clusters truly map to multiple surviving E-clusters: {mixed_inh[:10]}…")
+    
+    def split_inh_cluster(row):
+        """Split mixed inhibitory clusters by combining IDs."""
+        inh = int(row['cluster_id_inh'])
+        exec_ = int(row['cluster_id_exec'])
+        if inh in mixed_inh:
+            # create a unique subcluster id for each (inh,exec) pair
+            return inh * 1000 + exec_
+        else:
+            return inh
+    
+    syn_inh_df['cluster_id_inh'] = syn_inh_df.apply(split_inh_cluster, axis=1)
+    
+    # Verify that we've eliminated all "multi‐mapped" I-clusters:
+    verify = (
+        syn_inh_df[syn_inh_df['cluster_id_exec'].isin(valid_exec_ids)]
+        .groupby('cluster_id_inh')['cluster_id_exec']
+        .nunique()
+    )
+    
+    print("All inhibitory clusters now map one-to-one onto surviving E-clusters (or to –1).")
     
     return syn_inh_df
 
@@ -86,6 +279,53 @@ def split_mixed_inhibitory_clusters(
     
     # Apply splitting
     syn_inh_df["cluster_id_inh"] = syn_inh_df.apply(split_inh_cluster, axis=1)
+    
+    return syn_inh_df
+
+def find_closest_excitatory_synapses_for_e_gradient(
+    syn_inh_df: pd.DataFrame,
+    syn_exec_df: pd.DataFrame,
+    geodesic_mat_full: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Find the closest excitatory synapse for each inhibitory synapse (for E-gradient approach).
+    
+    Args:
+        syn_inh_df: DataFrame with inhibitory synapse data
+        syn_exec_df: DataFrame with excitatory synapse data
+        geodesic_mat_full: Geodesic distance matrix between all nodes
+        
+    Returns:
+        DataFrame with inhibitory synapses mapped to closest excitatory synapses
+    """
+    syn_inh_df = syn_inh_df.copy()
+    
+    # Pull all E‐synapse data into arrays
+    e_ids = syn_exec_df["id"].to_numpy()
+    e_nodes = syn_exec_df["closest_node_id"].to_numpy()
+    e_offsets = syn_exec_df["distance_to_node"].to_numpy()
+    
+    def find_true_closest_esyn(i_row):
+        """Find the closest excitatory synapse to an inhibitory synapse."""
+        i_node = i_row.closest_node_id
+        i_offset = i_row.distance_to_node
+        
+        # Vector of geodesic distances from this I‐node to every E‐node
+        # geodesic_mat_full is a DataFrame; .loc returns a Series aligned on e_nodes
+        geo_to_all_e = geodesic_mat_full.loc[i_node, e_nodes].to_numpy()
+        
+        # Total per‐E‐synapse distance
+        total_dists = geo_to_all_e
+        
+        # Pick the index of the minimum
+        idx = np.argmin(total_dists)
+        
+        return pd.Series({
+            "closest_e_syn_id": e_ids[idx],
+            "min_dist_true_e": total_dists[idx]
+        })
+    
+    syn_inh_df[["closest_e_syn_id", "min_dist_e_syn_tot"]] = syn_inh_df.apply(find_true_closest_esyn, axis=1)
     
     return syn_inh_df
 
