@@ -1228,3 +1228,192 @@ def plot_branch_by_ecluster_enhanced(
         print(f"Enhanced branch E-cluster visualization saved to: {output_path}")
     
     return fig
+
+
+def plot_branch_synapses_with_individual_tone_mapping(
+    branch_idx: int,
+    neuron_splits: List[Any],
+    syn_exec_df: pd.DataFrame,
+    cluster_df: pd.DataFrame,
+    calculation_nodes: pd.DataFrame,
+    config: VisualizationConfig,
+    save_plot: bool = True
+) -> go.Figure:
+    """
+    Plot 3D visualization where each synapse and its associated node have matching
+    individual tones of the cluster color for precise synapse-to-node mapping.
+    
+    Args:
+        branch_idx: Index of the branch to visualize
+        neuron_splits: List of branch skeleton objects
+        syn_exec_df: DataFrame with excitatory synapse data
+        cluster_df: DataFrame with cluster information
+        calculation_nodes: DataFrame with node coordinates
+        config: Visualization configuration
+        save_plot: Whether to save the plot
+        
+    Returns:
+        Plotly figure
+    """
+    import colorsys
+    
+    def generate_color_tones(base_color, num_tones):
+        """Generate different tones of a base color."""
+        # Convert hex to RGB
+        if base_color.startswith('#'):
+            rgb = tuple(int(base_color[i:i+2], 16) for i in (1, 3, 5))
+        else:
+            # Handle named colors
+            color_map = {
+                'red': (255, 0, 0), 'blue': (0, 0, 255), 'green': (0, 128, 0),
+                'yellow': (255, 255, 0), 'purple': (128, 0, 128), 'orange': (255, 165, 0),
+                'pink': (255, 192, 203), 'cyan': (0, 255, 255), 'magenta': (255, 0, 255),
+                'lime': (0, 255, 0), 'navy': (0, 0, 128), 'teal': (0, 128, 128)
+            }
+            rgb = color_map.get(base_color.lower(), (128, 128, 128))
+        
+        # Convert to HSV for tone variation
+        h, s, v = colorsys.rgb_to_hsv(rgb[0]/255, rgb[1]/255, rgb[2]/255)
+        
+        tones = []
+        for i in range(num_tones):
+            # Vary saturation and value to create different tones
+            tone_s = max(0.3, s * (0.7 + 0.3 * i / max(1, num_tones-1)))
+            tone_v = max(0.4, v * (0.8 + 0.2 * i / max(1, num_tones-1)))
+            
+            # Convert back to RGB
+            tone_rgb = colorsys.hsv_to_rgb(h, tone_s, tone_v)
+            tone_hex = f"#{int(tone_rgb[0]*255):02x}{int(tone_rgb[1]*255):02x}{int(tone_rgb[2]*255):02x}"
+            tones.append(tone_hex)
+        
+        return tones
+    
+    # Select the branch and its synapses
+    rand_branch = neuron_splits[branch_idx]
+    node_ids = rand_branch.nodes["node_id"].tolist()
+    
+    # Get synapses on this branch
+    df_e_branch = syn_exec_df[syn_exec_df["closest_node_id"].isin(node_ids)]
+    
+    # Split valid vs invalid clusters
+    cluster_id_col = 'e_cluster_id' if 'e_cluster_id' in cluster_df.columns else 'cluster_id'
+    syn_cluster_id_col = 'cluster_id_exec' if 'cluster_id_exec' in df_e_branch.columns else 'cluster_id'
+    
+    valid_clusters = set(cluster_df[cluster_id_col])
+    df_e_valid = df_e_branch[df_e_branch[syn_cluster_id_col].isin(valid_clusters)]
+    df_e_invalid = df_e_branch[~df_e_branch[syn_cluster_id_col].isin(valid_clusters)]
+    
+    # Create figure
+    fig = go.Figure()
+    
+    # Get base colors for clusters
+    exec_ids = sorted(df_e_valid[syn_cluster_id_col].unique())
+    palette = q.Plotly
+    base_color_map = {cid: palette[i % len(palette)] for i, cid in enumerate(exec_ids)}
+    
+    # Plot synapses with individual tones
+    for cid, base_color in base_color_map.items():
+        cluster_synapses = df_e_valid[df_e_valid[syn_cluster_id_col] == cid]
+        
+        if not cluster_synapses.empty:
+            # Generate individual tones for this cluster
+            num_synapses = len(cluster_synapses)
+            color_tones = generate_color_tones(base_color, num_synapses)
+            
+            # Plot each synapse with its unique tone
+            for idx, (_, synapse) in enumerate(cluster_synapses.iterrows()):
+                fig.add_trace(go.Scatter3d(
+                    x=[synapse["Epos3DX"]],
+                    y=[synapse["Epos3DY"]],
+                    z=[synapse["Epos3DZ"]],
+                    mode="markers",
+                    marker=dict(size=5, color=color_tones[idx], symbol="circle"),
+                    name=f"E-cluster {int(cid)} synapse {idx+1}",
+                    showlegend=False
+                ))
+                
+                # Get the associated node for this synapse
+                node_id = synapse['closest_node_id']
+                node_coords = calculation_nodes[calculation_nodes['node_id'] == node_id]
+                
+                if not node_coords.empty:
+                    node = node_coords.iloc[0]
+                    fig.add_trace(go.Scatter3d(
+                        x=[node['x']], 
+                        y=[node['y']], 
+                        z=[node['z']],
+                        mode='markers',
+                        marker=dict(
+                            size=6,
+                            color=color_tones[idx],  # Same tone as the synapse
+                            symbol='diamond',
+                            line=dict(width=1, color='white'),
+                            opacity=0.8
+                        ),
+                        name=f"Node for E-cluster {int(cid)} synapse {idx+1}",
+                        showlegend=False
+                    ))
+    
+    # Add invalid (filtered-out) synapses as simple grey (no individual tones)
+    if not df_e_invalid.empty:
+        fig.add_trace(go.Scatter3d(
+            x=df_e_invalid["Epos3DX"],
+            y=df_e_invalid["Epos3DY"],
+            z=df_e_invalid["Epos3DZ"],
+            mode="markers",
+            marker=dict(size=5, color="darkgrey", symbol="circle"),
+            name="Unclustered E-synapses",
+            showlegend=True
+        ))
+        
+        # Get unique node IDs that filtered-out synapses are associated with
+        invalid_node_ids = df_e_invalid['closest_node_id'].unique()
+        
+        # Get coordinates for these nodes from calculation_nodes
+        invalid_node_coords = calculation_nodes[calculation_nodes['node_id'].isin(invalid_node_ids)]
+        
+        if not invalid_node_coords.empty:
+            fig.add_trace(go.Scatter3d(
+                x=invalid_node_coords['x'], 
+                y=invalid_node_coords['y'], 
+                z=invalid_node_coords['z'],
+                mode='markers',
+                marker=dict(
+                    size=6,  # Same size as cluster node diamonds
+                    color='darkgrey',  # Same grey color as filtered-out synapses
+                    symbol='diamond',
+                    line=dict(width=1, color='white'),
+                    opacity=0.8
+                ),
+                name="Nodes for unclustered synapses",
+                showlegend=True
+            ))
+    
+    # Add skeleton
+    start = len(fig.data)
+    navis.plot3d(
+        rand_branch,
+        fig=fig,
+        color="green",
+        palette="viridis",
+        alpha=0.3,
+        legend=False,
+        inline=False
+    )
+    end = len(fig.data)
+    for i in range(start, end):
+        fig.data[i].showlegend = False
+    
+    fig.update_layout(
+        title=f"Branch {branch_idx}: Individual synapse-to-node mapping with tone variations",
+        width=800,
+        height=600,
+        scene=dict(aspectmode="data")
+    )
+    
+    if save_plot:
+        output_path = config.base_output_dir / "branches" / f"{config.neuron_id}_branch_{branch_idx}_individual_tone_mapping.{config.format}"
+        fig.write_image(str(output_path), width=800, height=600, scale=2)
+        print(f"Branch individual tone mapping plot saved to: {output_path}")
+    
+    return fig

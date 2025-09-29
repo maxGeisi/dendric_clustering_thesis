@@ -31,7 +31,8 @@ from .branch_plots import (
     plot_synapse_distance_to_soma_histogram,
     plot_branch_density_analysis,
     plot_branch_inhibitory_clusters,
-    plot_branch_by_ecluster_enhanced
+    plot_branch_by_ecluster_enhanced,
+    plot_branch_synapses_with_individual_tone_mapping
 )
 
 
@@ -557,6 +558,12 @@ def create_advanced_branch_visualizations(
                 branch_idx, neuron_splits, syn_exec_df, syn_inh_df, cluster_df_inh, neuron_skel, config, save_plot=save_plots
             )
             results['branch_inhibitory_clusters'] = fig6
+        
+        # 6. Branch synapses with individual tone mapping
+        fig7 = plot_branch_synapses_with_individual_tone_mapping(
+            branch_idx, neuron_splits, syn_exec_df, cluster_df, calculation_nodes, config, save_plot=save_plots
+        )
+        results['branch_individual_tone_mapping'] = fig7
         
         print(f"\nCreated {len(results)} advanced branch visualizations successfully!")
         
